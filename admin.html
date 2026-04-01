@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard — The Observer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue, remove, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // ─── REPLACE WITH YOUR FIREBASE CONFIG ───
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+  // ─────────────────────────────────────────
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  window._db = db;
+  window._dbRef = ref;
+  window._dbSet = set;
+  window._dbOnValue = onValue;
+  window._dbRemove = remove;
+  window._dbGet = get;
+  window._firebaseReady = true;
+  document.dispatchEvent(new Event('firebaseReady'));
+</script>
+
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #161a22;
+    --surface2: #1e2330;
+    --border: #2a3040;
+    --accent: #e63946;
+    --accent2: #f4a261;
+    --green: #57cc99;
+    --blue: #4ea8de;
+    --text: #c9d1d9;
+    --text-dim: #6e7f99;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Lato', sans-serif;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  /* ── LOGIN ── */
+  #login-screen {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 30%, #1a0e0e 0%, var(--bg) 70%);
+  }
+
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3rem 2.5rem;
+    max-width: 380px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    text-align: center;
+  }
+
+  .login-logo {
+    font-family: var(--mono);
+    font-size: 1rem; color: var(--accent);
+    letter-spacing: 3px; text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  .login-box h2 {
+    font-family: var(--sans);
+    font-size: 1.4rem; font-weight: 700;
+    margin-bottom: 2rem; color: white;
+  }
+
+  .login-box input {
+    width: 100%; padding: 0.85rem 1rem;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 5px; color: white; font-family: var(--mono);
+    font-size: 1.1rem; letter-spacing: 4px;
+    text-align: center; margin-bottom: 1rem;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+  .login-box input:focus { border-color: var(--accent); }
+
+  .login-btn {
+    width: 100%; padding: 0.85rem;
+    background: var(--accent); color: white;
+    border: none; border-radius: 5px;
+    font-family: var(--sans); font-size: 1rem; font-weight: 700;
+    cursor: pointer; letter-spacing: 1px;
+    transition: background 0.2s;
+  }
+  .login-btn:hover { background: #c1121f; }
+
+  .login-error {
+    color: var(--accent); font-size: 0.85rem;
+    margin-top: 0.8rem; display: none;
+  }
+
+  /* ── DASHBOARD ── */
+  #dashboard { display: none; }
+
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0.9rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .topbar-logo {
+    font-family: var(--mono);
+    font-size: 0.85rem; color: var(--accent);
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+
+  .topbar-right { display: flex; align-items: center; gap: 1rem; }
+
+  .live-indicator {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; color: var(--green);
+    font-family: var(--mono);
+  }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.5; transform:scale(0.8); }
+  }
+
+  .logout-btn {
+    padding: 0.4rem 0.9rem;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: transparent; color: var(--text-dim);
+    font-family: var(--sans); font-size: 0.8rem;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .logout-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── LAYOUT ── */
+  .dashboard-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: calc(100vh - 56px);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem;
+  }
+
+  .sidebar-section { margin-bottom: 2rem; }
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 0.7rem; letter-spacing: 2px;
+    color: var(--text-dim); text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  /* Stats */
+  .stat-card {
+    background: var(--surface2);
+    border-radius: 6px; padding: 0.9rem 1rem;
+    margin-bottom: 0.6rem; border: 1px solid var(--border);
+  }
+  .stat-label { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.3rem; }
+  .stat-value { font-family: var(--mono); font-size: 1.4rem; font-weight: 700; color: white; }
+
+  /* Toggles */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.7rem 0; border-bottom: 1px solid var(--border);
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 6px; }
+
+  .toggle-switch {
+    position: relative; width: 42px; height: 22px;
+  }
+  .toggle-switch input { opacity: 0; width:0; height:0; }
+  .toggle-slider {
+    position: absolute; inset: 0; cursor: pointer;
+    background: var(--border); border-radius: 22px;
+    transition: background 0.3s;
+  }
+  .toggle-slider:before {
+    content: ''; position: absolute;
+    left: 3px; top: 3px;
+    width: 16px; height: 16px;
+    border-radius: 50%; background: white;
+    transition: transform 0.3s;
+  }
+  input:checked + .toggle-slider { background: var(--green); }
+  input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+  /* Filter */
+  .filter-input {
+    width: 100%; padding: 0.55rem 0.8rem;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text);
+    font-family: var(--sans); font-size: 0.85rem;
+    outline: none; transition: border-color 0.2s;
+  }
+  .filter-input:focus { border-color: var(--blue); }
+
+  /* ── MAIN CONTENT ── */
+  .main-content { padding: 1.5rem; overflow-y: auto; }
+
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.2rem;
+  }
+  .section-title {
+    font-family: var(--mono);
+    font-size: 0.85rem; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+
+  /* ── VISITOR CARDS ── */
+  #visitor-list { display: flex; flex-direction: column; gap: 0.8rem; }
+
+  .visitor-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 1.2rem 1.4rem;
+    transition: border-color 0.2s;
+    animation: cardIn 0.3s ease;
+  }
+  .visitor-card:hover { border-color: #3a4555; }
+
+  @keyframes cardIn {
+    from { opacity:0; transform:translateY(-8px); }
+    to { opacity:1; transform:translateY(0); }
+  }
+
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.9rem;
+    flex-wrap: wrap; gap: 0.5rem;
+  }
+
+  .visitor-id {
+    font-family: var(--mono); font-size: 0.75rem;
+    color: var(--blue); letter-spacing: 1px;
+  }
+
+  .card-time {
+    font-size: 0.75rem; color: var(--text-dim);
+    font-family: var(--mono);
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.8rem; margin-bottom: 1rem;
+  }
+
+  .info-chip {
+    background: var(--surface2);
+    border-radius: 4px; padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border);
+  }
+  .chip-label { font-size: 0.68rem; color: var(--text-dim); margin-bottom: 0.2rem; text-transform: uppercase; letter-spacing: 1px; }
+  .chip-value { font-size: 0.85rem; color: var(--text); font-family: var(--mono); word-break: break-all; }
+
+  .perm-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem; }
+  .perm-badge {
+    font-size: 0.72rem; padding: 0.22rem 0.6rem;
+    border-radius: 99px; font-family: var(--mono);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .perm-granted { background: rgba(87,204,153,0.15); color: var(--green); border: 1px solid rgba(87,204,153,0.3); }
+  .perm-denied { background: rgba(230,57,70,0.15); color: var(--accent); border: 1px solid rgba(230,57,70,0.3); }
+  .perm-none { background: rgba(110,127,153,0.15); color: var(--text-dim); border: 1px solid rgba(110,127,153,0.3); }
+
+  .card-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.8rem; }
+
+  .card-btn {
+    padding: 0.35rem 0.8rem; font-size: 0.78rem;
+    border-radius: 4px; cursor: pointer;
+    font-family: var(--sans); border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim);
+    transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .card-btn:hover { border-color: var(--text-dim); color: var(--text); }
+  .card-btn.danger:hover { border-color: var(--accent); color: var(--accent); }
+  .card-btn.primary { border-color: var(--blue); color: var(--blue); }
+  .card-btn.primary:hover { background: rgba(78,168,222,0.1); }
+
+  /* Map modal */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(0,0,0,0.8);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-width: 600px; width: 100%;
+    padding: 1.5rem;
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .modal-title {
+    font-family: var(--mono); font-size: 0.85rem;
+    color: var(--blue); text-transform: uppercase; letter-spacing: 1px;
+  }
+  .modal-close {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 1.3rem; cursor: pointer; line-height: 1;
+  }
+  .modal-close:hover { color: var(--accent); }
+
+  #photo-modal-img { max-width: 100%; border-radius: 4px; }
+  #map-modal-iframe { width: 100%; height: 300px; border: none; border-radius: 4px; }
+
+  .empty-state {
+    text-align: center; padding: 4rem 1rem;
+    color: var(--text-dim); font-family: var(--mono);
+    font-size: 0.85rem;
+  }
+  .empty-state .big { font-size: 3rem; margin-bottom: 1rem; }
+
+  @media (max-width: 768px) {
+    .dashboard-layout { grid-template-columns: 1fr; }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">🔐 The Observer</div>
+    <h2>Admin Dashboard</h2>
+    <input type="password" id="pwd-input" placeholder="• • • • • •" maxlength="10" />
+    <button class="login-btn" id="login-btn">Enter Dashboard</button>
+    <div class="login-error" id="login-error">Incorrect password. Try again.</div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div class="topbar">
+    <div class="topbar-logo">⬡ Observer Admin</div>
+    <div class="topbar-right">
+      <div class="live-indicator">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <button class="logout-btn" id="logout-btn">Log Out</button>
+    </div>
+  </div>
+
+  <div class="dashboard-layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Overview</div>
+        <div class="stat-card">
+          <div class="stat-label">Total Visitors</div>
+          <div class="stat-value" id="stat-total">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">With Consent</div>
+          <div class="stat-value" id="stat-consent">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Location Shares</div>
+          <div class="stat-value" id="stat-location">0</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Feature Controls</div>
+        <div class="toggle-row">
+          <span class="toggle-label">📍 Location</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-location" checked onchange="saveSettings()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">📷 Camera</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-camera" checked onchange="saveSettings()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">🎤 Microphone</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-mic" checked onchange="saveSettings()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Filter</div>
+        <input class="filter-input" type="text" id="filter-input" placeholder="Search by IP, device…" oninput="filterVisitors()" />
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Actions</div>
+        <button class="card-btn danger" style="width:100%;justify-content:center" onclick="deleteAllVisitors()">
+          🗑 Delete All Visitors
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main-content">
+      <div class="section-header">
+        <div class="section-title">Visitor Log</div>
+        <div style="font-family:var(--mono);font-size:0.75rem;color:var(--text-dim)" id="update-time">—</div>
+      </div>
+      <div id="visitor-list">
+        <div class="empty-state">
+          <div class="big">📡</div>
+          Waiting for Firebase connection…
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MAP MODAL -->
+<div id="map-modal" class="modal-overlay" style="display:none" onclick="closeModal('map-modal')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title">📍 Visitor Location</div>
+      <button class="modal-close" onclick="closeModal('map-modal')">✕</button>
+    </div>
+    <iframe id="map-modal-iframe" src="" allowfullscreen></iframe>
+    <p id="map-modal-coords" style="font-family:var(--mono);font-size:0.78rem;color:var(--text-dim);margin-top:0.6rem;text-align:center"></p>
+  </div>
+</div>
+
+<!-- PHOTO MODAL -->
+<div id="photo-modal" class="modal-overlay" style="display:none" onclick="closeModal('photo-modal')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title">📷 Captured Photo</div>
+      <button class="modal-close" onclick="closeModal('photo-modal')">✕</button>
+    </div>
+    <img id="photo-modal-img" src="" alt="Visitor photo" />
+  </div>
+</div>
+
+<script>
+const ADMIN_PASSWORD = '521988';
+let allVisitors = {};
+
+// ─── LOGIN ──────────────────────────────────────────
+document.getElementById('login-btn').addEventListener('click', tryLogin);
+document.getElementById('pwd-input').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+
+function tryLogin() {
+  const pwd = document.getElementById('pwd-input').value;
+  if (pwd === ADMIN_PASSWORD) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    initDashboard();
+  } else {
+    const err = document.getElementById('login-error');
+    err.style.display = 'block';
+    document.getElementById('pwd-input').value = '';
+    setTimeout(() => { err.style.display = 'none'; }, 3000);
+  }
+}
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('pwd-input').value = '';
+});
+
+// ─── DASHBOARD ──────────────────────────────────────
+function initDashboard() {
+  if (!window._firebaseReady) {
+    document.addEventListener('firebaseReady', initDashboard);
+    return;
+  }
+  loadSettings();
+  listenToVisitors();
+}
+
+// ─── SETTINGS ──────────────────────────────────────
+function saveSettings() {
+  const settings = {
+    location: document.getElementById('toggle-location').checked,
+    camera: document.getElementById('toggle-camera').checked,
+    mic: document.getElementById('toggle-mic').checked
+  };
+  const r = window._dbRef(window._db, 'admin/settings');
+  window._dbSet(r, settings).catch(console.warn);
+}
+
+async function loadSettings() {
+  try {
+    const r = window._dbRef(window._db, 'admin/settings');
+    const snap = await window._dbGet(r);
+    if (snap.exists()) {
+      const s = snap.val();
+      if (s.location !== undefined) document.getElementById('toggle-location').checked = s.location;
+      if (s.camera !== undefined) document.getElementById('toggle-camera').checked = s.camera;
+      if (s.mic !== undefined) document.getElementById('toggle-mic').checked = s.mic;
+    }
+  } catch(e) {}
+}
+
+// ─── REAL-TIME VISITORS ─────────────────────────────
+function listenToVisitors() {
+  const r = window._dbRef(window._db, 'visitors');
+  window._dbOnValue(r, snap => {
+    allVisitors = snap.exists() ? snap.val() : {};
+    renderVisitors(allVisitors);
+    updateStats(allVisitors);
+    document.getElementById('update-time').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  });
+}
+
+function updateStats(visitors) {
+  const ids = Object.keys(visitors);
+  document.getElementById('stat-total').textContent = ids.length;
+  const consented = ids.filter(id => visitors[id]?.session?.consentGiven).length;
+  document.getElementById('stat-consent').textContent = consented;
+  const withLoc = ids.filter(id => visitors[id]?.location?.lat).length;
+  document.getElementById('stat-location').textContent = withLoc;
+}
+
+function renderVisitors(visitors) {
+  const list = document.getElementById('visitor-list');
+  const query = document.getElementById('filter-input').value.toLowerCase();
+  const ids = Object.keys(visitors).sort().reverse();
+
+  const filtered = ids.filter(id => {
+    const v = visitors[id];
+    const text = JSON.stringify(v).toLowerCase();
+    return !query || text.includes(query);
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state"><div class="big">🔍</div>${query ? 'No visitors match your filter.' : 'No visitors recorded yet.'}</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(id => buildCard(id, visitors[id])).join('');
+}
+
+function buildCard(id, v) {
+  const device = v.device || {};
+  const session = v.session || {};
+  const perms = v.permissions || {};
+  const loc = v.location;
+  const hasPhoto = v.media?.photo_thumbnail;
+
+  const permBadge = (label, emoji, status) => {
+    const cls = status === 'granted' ? 'perm-granted' : status === 'denied' ? 'perm-denied' : 'perm-none';
+    const display = status === 'not_requested' ? 'not used' : status;
+    return `<span class="perm-badge ${cls}">${emoji} ${label}: ${display}</span>`;
+  };
+
+  const dur = session.duration_seconds
+    ? `${Math.floor(session.duration_seconds/60)}m ${session.duration_seconds % 60}s`
+    : 'Active';
+
+  const ts = session.start ? new Date(session.start).toLocaleString() : 'Unknown';
+  const shortId = id.replace('v_','').substring(0,14);
+
+  return `
+    <div class="visitor-card" id="card-${id}">
+      <div class="card-header">
+        <div class="visitor-id">#${shortId}</div>
+        <div class="card-time">${ts}</div>
+      </div>
+      <div class="card-grid">
+        <div class="info-chip">
+          <div class="chip-label">IP</div>
+          <div class="chip-value">${v.ip || '—'}</div>
+        </div>
+        <div class="info-chip">
+          <div class="chip-label">Device</div>
+          <div class="chip-value">${device.type || '—'}</div>
+        </div>
+        <div class="info-chip">
+          <div class="chip-label">OS</div>
+          <div class="chip-value">${device.os || '—'}</div>
+        </div>
+        <div class="info-chip">
+          <div class="chip-label">Browser</div>
+          <div class="chip-value">${device.browser || '—'}</div>
+        </div>
+        <div class="info-chip">
+          <div class="chip-label">Screen</div>
+          <div class="chip-value">${device.screen || '—'}</div>
+        </div>
+        <div class="info-chip">
+          <div class="chip-label">Session</div>
+          <div class="chip-value">${dur}</div>
+        </div>
+        <div class="info-chip">
+          <div class="chip-label">Consent</div>
+          <div class="chip-value">${session.consentGiven ? '✅ Yes' : '❌ No'}</div>
+        </div>
+        ${loc ? `
+        <div class="info-chip">
+          <div class="chip-label">Coords</div>
+          <div class="chip-value">${parseFloat(loc.lat).toFixed(4)}, ${parseFloat(loc.lng).toFixed(4)}</div>
+        </div>` : ''}
+      </div>
+      <div class="perm-badges">
+        ${permBadge('Location','📍', perms.location || 'not_requested')}
+        ${permBadge('Camera','📷', perms.camera || 'not_requested')}
+        ${permBadge('Mic','🎤', perms.mic || 'not_requested')}
+      </div>
+      <div class="card-actions">
+        ${loc ? `<button class="card-btn primary" onclick="showMap('${loc.lat}','${loc.lng}')">🗺 View Map</button>` : ''}
+        ${hasPhoto ? `<button class="card-btn primary" onclick="showPhoto('${id}')">🖼 View Photo</button>` : ''}
+        <button class="card-btn danger" onclick="deleteVisitor('${id}')">🗑 Delete</button>
+      </div>
+    </div>`;
+}
+
+function filterVisitors() {
+  renderVisitors(allVisitors);
+}
+
+// ─── DELETE ─────────────────────────────────────────
+function deleteVisitor(id) {
+  if (!confirm('Delete this visitor record?')) return;
+  const r = window._dbRef(window._db, 'visitors/' + id);
+  window._dbRemove(r).catch(console.warn);
+}
+
+function deleteAllVisitors() {
+  if (!confirm('Delete ALL visitor data? This cannot be undone.')) return;
+  const r = window._dbRef(window._db, 'visitors');
+  window._dbRemove(r).catch(console.warn);
+}
+
+// ─── MODALS ─────────────────────────────────────────
+function showMap(lat, lng) {
+  document.getElementById('map-modal-iframe').src =
+    `https://www.google.com/maps?q=${lat},${lng}&z=14&output=embed`;
+  document.getElementById('map-modal-coords').textContent = `${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}`;
+  document.getElementById('map-modal').style.display = 'flex';
+}
+
+function showPhoto(id) {
+  const thumb = allVisitors[id]?.media?.photo_thumbnail;
+  if (thumb) {
+    document.getElementById('photo-modal-img').src = thumb;
+    document.getElementById('photo-modal').style.display = 'flex';
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+  if (id === 'map-modal') document.getElementById('map-modal-iframe').src = '';
+}
+
+// ─── FIREBASE READY ─────────────────────────────────
+document.addEventListener('firebaseReady', () => console.log('Firebase connected'));
+</script>
+</body>
+</html>
